@@ -33,7 +33,6 @@
 </div>
 
 <div id="view-game" hidden>
-  <p id="info"></p>
 
   <div id="build">
     <p>Add things to the board!</p>
@@ -174,8 +173,6 @@ function render() {
   var isHost = game.host === me.name;
   var building = game.phase === 'building';
 
-  $('info').textContent = 'You are ' + me.name + (isHost ? ' (host)' : '') +
-    '. ' + game.items.length + ' items. ' + (building ? 'Board is open.' : 'Board is locked.');
   $('players').textContent = game.players.join(', ');
   $('build').hidden = !building;
   $('play').hidden = building;
