@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bingo</title>
+<style>
+  body { font-family: monospace; font-size: 16px; max-width: 700px; margin: 1em auto; padding: 0 1em; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  td { border: 1px solid black; padding: 0.6em 0.3em; text-align: center; vertical-align: middle; word-wrap: break-word; cursor: pointer; }
+  td.marked { text-decoration: line-through; }
+  input[type=text] { font-family: monospace; font-size: 16px; }
+  .err { min-height: 1.2em; }
+</style>
+</head>
+<body>
+
+<h1>Bingo <span id="code-label"></span></h1>
+<div id="err" class="err"></div>
+
+<div id="view-join">
+  <p>Name: <input type="text" id="name" maxlength="20"></p>
+  <p>Room code: <input type="text" id="code" maxlength="4" size="6"></p>
+  <p>
+    <button id="join-btn">Join room</button>
+    <button id="create-btn">Create new room</button>
+  </p>
+</div>
+
+<div id="view-game" hidden>
+  <p id="info"></p>
+
+  <div id="build">
+    <p>Add things to the board. Anyone can add. The host locks the board when it is ready.</p>
+    <p>
+      <input type="text" id="item" maxlength="60" size="40">
+      <button id="add-btn">Add</button>
+    </p>
+    <ol id="item-list"></ol>
+    <p><button id="lock-btn" hidden>Lock board and start</button></p>
+  </div>
+
+  <div id="play" hidden>
+    <p>Click a square to X it out. Click again to undo.</p>
+    <table id="board"></table>
+    <p id="last"></p>
+    <p><button id="reopen-btn" hidden>Unlock board (clears all X marks)</button></p>
+  </div>
+
+  <p>Share link: <span id="link"></span></p>
+  <p>Players: <span id="players"></span></p>
+  <p><button id="leave-btn">Leave room</button></p>
+</div>
+
+<script>
+var API_URL = 'https://script.google.com/macros/s/AKfycbxzo6cEnDwaK8tFCDgmkPDTGCAVoflO10miukSWejysyMYUcLYYyHN9i8Fu7uTXNJI9/exec';
+var POLL_MS = 3000;
+
+var me = { name: '', code: '' };
+var game = null;
+var lastJson = '';
+var timer = null;
+var $ = function (id) { return document.getElementById(id); };
+
+function api(action, params) {
+  var q = ['action=' + encodeURIComponent(action)];
+  Object.keys(params || {}).forEach(function (k) {
+    q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+  });
+  return fetch(API_URL + '?' + q.join('&'), { redirect: 'follow' })
+    .then(function (r) { return r.text(); })
+    .then(function (t) { return JSON.parse(t); });
+}
+
+function showError(msg) {
+  $('err').textContent = msg;
+  setTimeout(function () { if ($('err').textContent === msg) $('err').textContent = ''; }, 4000);
+}
+
+function call(action, params, done) {
+  params = params || {};
+  params.code = me.code;
+  params.name = me.name;
+  api(action, params)
+    .then(function (res) {
+      if (res.error) showError(res.error);
+      else if (done) done(res);
+      poll();
+    })
+    .catch(function () { showError('Connection error'); });
+}
+
+// --- entering / leaving a room ---
+
+function enter(code, name) {
+  me.code = code;
+  me.name = name;
+  try {
+    localStorage.setItem('bingo_name', name);
+    localStorage.setItem('bingo_code', code);
+  } catch (e) {}
+  lastJson = '';
+  $('view-join').hidden = true;
+  $('view-game').hidden = false;
+  $('code-label').textContent = '- ' + code;
+  var u = window.location.href.split('?')[0];
+  $('link').textContent = u + '?code=' + code;
+  poll();
+  clearInterval(timer);
+  timer = setInterval(poll, POLL_MS);
+}
+
+function leave() {
+  clearInterval(timer);
+  try { localStorage.removeItem('bingo_code'); } catch (e) {}
+  me.code = '';
+  game = null;
+  $('view-game').hidden = true;
+  $('view-join').hidden = false;
+  $('code-label').textContent = '';
+}
+
+function getInputs() {
+  var name = $('name').value.trim();
+  var code = $('code').value.trim().toUpperCase();
+  return { name: name, code: code };
+}
+
+function joinRoom() {
+  var v = getInputs();
+  if (!v.name) { showError('Enter your name'); return; }
+  if (v.code.length !== 4) { showError('Room code is 4 letters'); return; }
+  api('join', { code: v.code, name: v.name })
+    .then(function (res) {
+      if (res.error) showError(res.error);
+      else enter(v.code, v.name);
+    })
+    .catch(function () { showError('Connection error'); });
+}
+
+function createRoom() {
+  var v = getInputs();
+  if (!v.name) { showError('Enter your name'); return; }
+  api('createGame', { name: v.name })
+    .then(function (res) {
+      if (res.error) showError(res.error);
+      else enter(res.code, v.name);
+    })
+    .catch(function () { showError('Connection error'); });
+}
+
+// --- polling / rendering ---
+
+function poll() {
+  if (!me.code) return;
+  api('getState', { code: me.code })
+    .then(function (g) {
+      if (g.error) { showError(g.error); return; }
+      var j = JSON.stringify(g);
+      if (j === lastJson) return;
+      lastJson = j;
+      game = g;
+      render();
+    })
+    .catch(function () {});
+}
+
+function render() {
+  var isHost = game.host === me.name;
+  var building = game.phase === 'building';
+
+  $('info').textContent = 'You are ' + me.name + (isHost ? ' (host)' : '') +
+    '. ' + game.items.length + ' items. ' + (building ? 'Board is open.' : 'Board is locked.');
+  $('players').textContent = game.players.join(', ');
+  $('build').hidden = !building;
+  $('play').hidden = building;
+
+  if (building) renderBuild(isHost);
+  else renderBoard(isHost);
+}
+
+function renderBuild(isHost) {
+  var list = $('item-list');
+  list.textContent = '';
+  game.items.forEach(function (it) {
+    var li = document.createElement('li');
+    li.appendChild(document.createTextNode(it.text + ' (' + it.by + ') '));
+    if (it.by === me.name || isHost) {
+      var b = document.createElement('button');
+      b.textContent = 'remove';
+      b.onclick = function () { call('removeItem', { id: it.id }); };
+      li.appendChild(b);
+    }
+    list.appendChild(li);
+  });
+  $('lock-btn').hidden = !isHost;
+}
+
+function renderBoard(isHost) {
+  var n = game.items.length;
+  var cols = Math.ceil(Math.sqrt(n));
+  var board = $('board');
+  board.textContent = '';
+  var tr = null;
+  game.items.forEach(function (it, i) {
+    if (i % cols === 0) { tr = document.createElement('tr'); board.appendChild(tr); }
+    var td = document.createElement('td');
+    td.textContent = it.marked ? 'X ' + it.text : it.text;
+    if (it.marked) td.className = 'marked';
+    td.onclick = function () { call('toggle', { id: it.id }); };
+    tr.appendChild(td);
+  });
+  var done = game.items.filter(function (it) { return it.marked; }).length;
+  $('last').textContent = done + ' of ' + n + ' crossed out.';
+  $('reopen-btn').hidden = !isHost;
+}
+
+// --- events ---
+
+$('join-btn').onclick = joinRoom;
+$('create-btn').onclick = createRoom;
+$('leave-btn').onclick = leave;
+$('add-btn').onclick = addItem;
+$('item').onkeydown = function (e) { if (e.key === 'Enter') addItem(); };
+$('code').onkeydown = function (e) { if (e.key === 'Enter') joinRoom(); };
+$('name').onkeydown = function (e) { if (e.key === 'Enter') joinRoom(); };
+$('lock-btn').onclick = function () {
+  if (confirm('Lock the board? No more items can be added.')) call('lock');
+};
+$('reopen-btn').onclick = function () {
+  if (confirm('Unlock the board? All X marks will be cleared.')) call('reopen');
+};
+
+function addItem() {
+  var text = $('item').value.trim();
+  if (!text) return;
+  call('addItem', { text: text }, function () { $('item').value = ''; $('item').focus(); });
+}
+
+// --- init: restore saved session, or prefill from ?code= ---
+
+(function init() {
+  var saved = {};
+  try {
+    saved.name = localStorage.getItem('bingo_name') || '';
+    saved.code = localStorage.getItem('bingo_code') || '';
+  } catch (e) { saved.name = ''; saved.code = ''; }
+
+  var urlCode = (new URLSearchParams(window.location.search).get('code') || '').toUpperCase();
+  $('name').value = saved.name;
+  $('code').value = urlCode || saved.code;
+
+  if (saved.name && saved.code && (!urlCode || urlCode === saved.code)) {
+    api('join', { code: saved.code, name: saved.name })
+      .then(function (res) { if (!res.error) enter(saved.code, saved.name); })
+      .catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
