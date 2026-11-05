@@ -12,7 +12,6 @@
     background:
       linear-gradient(to top right, transparent calc(50% - 2px), red calc(50% - 2px), red calc(50% + 2px), transparent calc(50% + 2px)),
       linear-gradient(to bottom right, transparent calc(50% - 2px), red calc(50% - 2px), red calc(50% + 2px), transparent calc(50% + 2px));
-    font-weight: bold;
   }
   input[type=text] { font-family: monospace; font-size: 16px; }
   .err { min-height: 1.2em; }
@@ -20,7 +19,8 @@
 </head>
 <body>
 
-<h1>Movie Bingo <span id="code-label"></span></h1>
+<h1>Movie Bingo</h1>
+<p id="date"></p>
 <div id="err" class="err"></div>
 
 <div id="view-join">
@@ -45,14 +45,12 @@
   </div>
 
   <div id="play" hidden>
-    <p>Click a square to X it out. Click again to undo.</p>
     <table id="board"></table>
-    <p id="last"></p>
     <p><button id="reopen-btn" hidden>Unlock board (clears all X marks)</button></p>
   </div>
 
-  <p>Share link: <span id="link"></span></p>
   <p>Players: <span id="players"></span></p>
+  <p>Room code: <span id="room-code"></span></p>
   <p><button id="leave-btn">Leave room</button></p>
 </div>
 
@@ -65,6 +63,8 @@ var game = null;
 var lastJson = '';
 var timer = null;
 var $ = function (id) { return document.getElementById(id); };
+
+$('date').textContent = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
 function api(action, params) {
   var q = ['action=' + encodeURIComponent(action)];
@@ -106,9 +106,7 @@ function enter(code, name) {
   lastJson = '';
   $('view-join').hidden = true;
   $('view-game').hidden = false;
-  $('code-label').textContent = '- ' + code;
-  var u = window.location.href.split('?')[0];
-  $('link').textContent = u + '?code=' + code;
+  $('room-code').textContent = code;
   poll();
   clearInterval(timer);
   timer = setInterval(poll, POLL_MS);
@@ -121,7 +119,7 @@ function leave() {
   game = null;
   $('view-game').hidden = true;
   $('view-join').hidden = false;
-  $('code-label').textContent = '';
+  $('room-code').textContent = '';
 }
 
 function getInputs() {
@@ -212,8 +210,6 @@ function renderBoard(isHost) {
     td.onclick = function () { call('toggle', { id: it.id }); };
     tr.appendChild(td);
   });
-  var done = game.items.filter(function (it) { return it.marked; }).length;
-  $('last').textContent = done + ' of ' + n + ' crossed out.';
   $('reopen-btn').hidden = !isHost;
 }
 
