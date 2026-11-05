@@ -3,19 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bingo</title>
+<title>Movie Bingo</title>
 <style>
   body { font-family: monospace; font-size: 16px; max-width: 700px; margin: 1em auto; padding: 0 1em; }
   table { border-collapse: collapse; width: 100%; table-layout: fixed; }
   td { border: 1px solid black; padding: 0.6em 0.3em; text-align: center; vertical-align: middle; word-wrap: break-word; cursor: pointer; }
-  td.marked { text-decoration: line-through; }
+  td.marked {
+    background:
+      linear-gradient(to top right, transparent calc(50% - 2px), red calc(50% - 2px), red calc(50% + 2px), transparent calc(50% + 2px)),
+      linear-gradient(to bottom right, transparent calc(50% - 2px), red calc(50% - 2px), red calc(50% + 2px), transparent calc(50% + 2px));
+    font-weight: bold;
+  }
   input[type=text] { font-family: monospace; font-size: 16px; }
   .err { min-height: 1.2em; }
 </style>
 </head>
 <body>
 
-<h1>Bingo <span id="code-label"></span></h1>
+<h1>Movie Bingo <span id="code-label"></span></h1>
 <div id="err" class="err"></div>
 
 <div id="view-join">
@@ -31,7 +36,7 @@
   <p id="info"></p>
 
   <div id="build">
-    <p>Add things to the board. Anyone can add. The host locks the board when it is ready.</p>
+    <p>Add things to the board!</p>
     <p>
       <input type="text" id="item" maxlength="60" size="40">
       <button id="add-btn">Add</button>
@@ -205,7 +210,7 @@ function renderBoard(isHost) {
   game.items.forEach(function (it, i) {
     if (i % cols === 0) { tr = document.createElement('tr'); board.appendChild(tr); }
     var td = document.createElement('td');
-    td.textContent = it.marked ? 'X ' + it.text : it.text;
+    td.textContent = it.text;
     if (it.marked) td.className = 'marked';
     td.onclick = function () { call('toggle', { id: it.id }); };
     tr.appendChild(td);
